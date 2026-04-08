@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
 const crypto = require('crypto');
 
 const app = express();
@@ -16,8 +15,6 @@ const SCOPES          = 'read_products,write_inventory,read_orders,read_customer
 
 let ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
-
 app.get('/auth', (req, res) => {
   const state = crypto.randomBytes(16).toString('hex');
   const url = `https://${SHOP}/admin/oauth/authorize?client_id=${SHOPIFY_API_KEY}&scope=${SCOPES}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=${state}`;
@@ -25,11 +22,10 @@ app.get('/auth', (req, res) => {
 });
 
 app.get('/auth/callback', async (req, res) => {
-  const { code, hmac, state } = req.query;
+  const { code, hmac } = req.query;
   const params = Object.keys(req.query).filter(k => k !== 'hmac').sort().map(k => `${k}=${req.query[k]}`).join('&');
   const digest = crypto.createHmac('sha256', SHOPIFY_SECRET).update(params).digest('hex');
   if (digest !== hmac) return res.status(400).send('Invalid HMAC');
-
   try {
     const r = await fetch(`https://${SHOP}/admin/oauth/access_token`, {
       method: 'POST',
@@ -38,7 +34,6 @@ app.get('/auth/callback', async (req, res) => {
     });
     const data = await r.json();
     ACCESS_TOKEN = data.access_token;
-    console.log('Access token obtained:', ACCESS_TOKEN);
     res.redirect(`${FRONTEND_URL}?shopify=connected`);
   } catch(e) {
     res.status(500).send('OAuth failed: ' + e.message);
@@ -49,47 +44,20 @@ app.get('/auth/status', (req, res) => {
   res.json({ connected: !!ACCESS_TOKEN, shop: SHOP });
 });
 
-// ── Shopify proxy ─────────────────────────────────────────────────────────────
-
 async function shopifyGet(endpoint) {
   const r = await fetch(`https://${SHOP}/admin/api/2024-01/${endpoint}`, {
     headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN, 'Content-Type': 'application/json' }
   });
-  if (!r.ok) throw new Error('Shopify ' + r.status + ' — ' + await r.text());
+  if (!r.ok) throw new Error('Shopify ' + r.status);
   return r.json();
 }
 
-app.get('/shopify/shop', async (req, res) => {
-  try { res.json(await shopifyGet('shop.json')); }
-  catch(e) { res.status(500).json({ error: e.message }); }
-});
+app.get('/shopify/shop',      async (req, res) => { try { res.json(await shopifyGet('shop.json')); } catch(e) { res.status(500).json({ error: e.message }); } });
+app.get('/shopify/products',  async (req, res) => { try { res.json(await shopifyGet('products.json?limit=250&fields=id,title,variants,status')); } catch(e) { res.status(500).json({ error: e.message }); } });
+app.get('/shopify/orders',    async (req, res) => { try { res.json(await shopifyGet('orders.json?limit=50&status=any&fields=id,name,email,created_at,total_price,financial_status,fulfillment_status,discount_codes,total_discounts,line_items')); } catch(e) { res.status(500).json({ error: e.message }); } });
+app.get('/shopify/customers', async (req, res) => { try { res.json(await shopifyGet('customers.json?limit=100&fields=id,first_name,last_name,email,orders_count,total_spent,city,country,created_at')); } catch(e) { res.status(500).json({ error: e.message }); } });
+app.get('/shopify/discounts', async (req, res) => { try { res.json(await shopifyGet('price_rules.json?limit=50')); } catch(e) { res.status(500).json({ error: e.message }); } });
 
-app.get('/shopify/products', async (req, res) => {
-  try { res.json(await shopifyGet('products.json?limit=250&fields=id,title,variants,status')); }
-  catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/shopify/orders', async (req, res) => {
-  try { res.json(await shopifyGet('orders.json?limit=50&status=any&fields=id,name,email,created_at,total_price,financial_status,fulfillment_status,discount_codes,total_discounts,line_items')); }
-  catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/shopify/customers', async (req, res) => {
-  try { res.json(await shopifyGet('customers.json?limit=100&fields=id,first_name,last_name,email,orders_count,total_spent,city,country,created_at')); }
-  catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/shopify/discounts', async (req, res) => {
-  try { res.json(await shopifyGet('price_rules.json?limit=50')); }
-  catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/shopify/inventory', async (req, res) => {
-  try { res.json(await shopifyGet('inventory_levels.json?limit=250')); }
-  catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Health check ──────────────────────────────────────────────────────────────
 app.get('/', (req, res) => res.json({ status: 'KAF Global API running', shopify: !!ACCESS_TOKEN }));
 
 const PORT = process.env.PORT || 3000;

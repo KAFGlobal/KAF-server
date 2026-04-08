@@ -4,7 +4,7 @@ const crypto = require('crypto');
 
 const app = express();
 app.use(express.json());
-app.use(cors({ origin: ['https://kafglobaldashboard.netlify.app', 'http://localhost:3000'] }));
+app.use(cors({ origin: '*' }));
 
 const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
 const SHOPIFY_SECRET  = process.env.SHOPIFY_SECRET;
@@ -13,7 +13,6 @@ const FRONTEND_URL    = 'https://kafglobaldashboard.netlify.app';
 const REDIRECT_URI    = 'https://kaf-server-production.up.railway.app/auth/callback';
 const SCOPES          = 'read_products,write_inventory,read_orders,read_customers,read_price_rules';
 
-// Token persists across restarts via env var, falls back to in-memory
 let ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 
 app.get('/auth', (req, res) => {
@@ -35,7 +34,6 @@ app.get('/auth/callback', async (req, res) => {
     });
     const data = await r.json();
     ACCESS_TOKEN = data.access_token;
-    console.log('Token obtained successfully');
     res.redirect(`${FRONTEND_URL}?shopify=connected`);
   } catch(e) {
     res.status(500).send('OAuth failed: ' + e.message);
@@ -51,7 +49,6 @@ app.get('/auth/token', (req, res) => {
 });
 
 async function shopifyGet(endpoint) {
-  if (!ACCESS_TOKEN) throw new Error('Not authenticated - please reconnect Shopify');
   const r = await fetch(`https://${SHOP}/admin/api/2024-01/${endpoint}`, {
     headers: { 'X-Shopify-Access-Token': ACCESS_TOKEN, 'Content-Type': 'application/json' }
   });

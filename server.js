@@ -9,8 +9,8 @@ app.use(cors({ origin: ['https://kafglobaldashboard.netlify.app', 'http://localh
 const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
 const SHOPIFY_SECRET  = process.env.SHOPIFY_SECRET;
 const SHOP            = process.env.SHOP_DOMAIN;
-const REDIRECT_URI    = process.env.REDIRECT_URI;
 const FRONTEND_URL    = 'https://kafglobaldashboard.netlify.app';
+const REDIRECT_URI    = 'https://kaf-server-production.up.railway.app/auth/callback';
 const SCOPES          = 'read_products,write_inventory,read_orders,read_customers,read_price_rules';
 
 let ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
@@ -60,5 +60,5 @@ app.get('/shopify/discounts', async (req, res) => { try { res.json(await shopify
 
 app.get('/', (req, res) => res.json({ status: 'KAF Global API running', shopify: !!ACCESS_TOKEN }));
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`KAF server running on port ${PORT}`));
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, '0.0.0.0', () => console.log(`KAF server running on port ${PORT}`));

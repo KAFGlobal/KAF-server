@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 app.use(express.json());
@@ -14,6 +15,10 @@ const REDIRECT_URI    = 'https://kaf-server-production.up.railway.app/auth/callb
 const SCOPES          = 'read_products,write_inventory,read_orders,read_customers,read_price_rules';
 
 let ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 app.get('/auth', (req, res) => {
   const state = crypto.randomBytes(16).toString('hex');
@@ -61,6 +66,86 @@ app.get('/shopify/products',  async (req, res) => { try { res.json(await shopify
 app.get('/shopify/orders',    async (req, res) => { try { res.json(await shopifyGet('orders.json?limit=50&status=any&fields=id,name,email,created_at,total_price,financial_status,fulfillment_status,discount_codes,total_discounts,line_items')); } catch(e) { res.status(500).json({ error: e.message }); } });
 app.get('/shopify/customers', async (req, res) => { try { res.json(await shopifyGet('customers.json?limit=100&fields=id,first_name,last_name,email,orders_count,total_spent,city,country,created_at')); } catch(e) { res.status(500).json({ error: e.message }); } });
 app.get('/shopify/discounts', async (req, res) => { try { res.json(await shopifyGet('price_rules.json?limit=50')); } catch(e) { res.status(500).json({ error: e.message }); } });
+
+app.get('/sync/customers', async (req, res) => {
+  try {
+    const data = await shopifyGet(
+      'customers.json?limit=250&fields=id,first_name,last_name,email,orders_count,total_spent,accepts_marketing,created_at'
+    );
+
+    const customers = data.customers.map(c => ({
+      id: c.id,
+      email: c.email,
+      first_name: c.first_name,
+      last_name: c.last_name,
+      accepts_marketing: c.accepts_marketing,
+      orders_count: c.orders_count,
+      total_spent: c.total_spent,
+      created_at: c.created_at
+    }));
+
+    const { error } = await supabase
+      .from('customers')
+      .upsert(customers);
+
+    if (error) throw error;
+
+    res.json({ synced: customers.length });
+
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/sync/orders', async (req, res) => {
+  try {
+    const data = await shopifyGet(
+      'orders.json?limit=250&status=any'
+    );
+
+    const orders = data.orders.map(o => ({
+      id: o.id,
+      order_number: o.name,
+      email: o.email,
+      customer_id: o.customer?.id || null,
+      created_at: o.created_at,
+      financial_status: o.financial_status,
+      fulfillment_status: o.fulfillment_status,
+      sales_channel: o.source_name,
+      total_price: o.total_price,
+      subtotal_price: o.subtotal_price,
+      total_discounts: o.total_discounts,
+      currency: o.currency
+    }));
+
+    const { error } = await supabase
+      .from('orders')
+      .upsert(orders);
+
+    if (error) throw error;
+
+    res.json({ synced: orders.length });
+
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/customers', async (req, res) => {
+  const { data } = await supabase
+    .from('customers')
+    .select('*');
+
+  res.json(data);
+});
+
+app.get('/api/orders', async (req, res) => {
+  const { data } = await supabase
+    .from('orders')
+    .select('*');
+
+  res.json(data);
+});
 
 app.get('/', (req, res) => res.json({ status: 'KAF Global API running', shopify: !!ACCESS_TOKEN }));
 
